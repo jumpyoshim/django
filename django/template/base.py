@@ -53,7 +53,7 @@ times with multiple contexts)
 import logging
 import re
 from enum import Enum
-from inspect import getcallargs, getfullargspec
+from inspect import getcallargs, getfullargspec, unwrap
 
 from django.template.context import (  # NOQA: imported for backwards compatibility
     BaseContext, Context, ContextPopException, RequestContext,
@@ -152,7 +152,7 @@ class Template:
         self.name = name
         self.origin = origin
         self.engine = engine
-        self.source = template_string
+        self.source = str(template_string)  # May be lazy.
         self.nodelist = self.compile_nodelist()
 
     def __iter__(self):
@@ -707,7 +707,7 @@ class FilterExpression:
         # First argument, filter input, is implied.
         plen = len(provided) + 1
         # Check to see if a decorator is providing the real function.
-        func = getattr(func, '_decorated_function', func)
+        func = unwrap(func)
 
         args, _, _, defaults, _, _, _ = getfullargspec(func)
         alen = len(args)
@@ -760,7 +760,7 @@ class Variable:
             # catching. Since this should only happen at compile time, that's
             # probably OK.
 
-            # Try to interpret values containg a period or an 'e'/'E'
+            # Try to interpret values containing a period or an 'e'/'E'
             # (possibly scientific notation) as a float;  otherwise, try int.
             if '.' in var or 'e' in var.lower():
                 self.literal = float(var)

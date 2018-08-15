@@ -1760,12 +1760,14 @@ class AdminViewPermissionsTest(TestCase):
         self.client.get(reverse('admin:logout'))
 
         # view user should be able to view the article but not change any of them
-        # (the POST can be sent, but no modification occures)
+        # (the POST can be sent, but no modification occurs)
         self.client.force_login(self.viewuser)
         response = self.client.get(article_changelist_url)
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['title'], 'Select article to view')
         response = self.client.get(article_change_url)
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['title'], 'View article')
         self.assertContains(response, '<a href="/test_admin/admin/admin_views/article/" class="closelink">Close</a>')
         post = self.client.post(article_change_url, change_dict)
         self.assertEqual(post.status_code, 302)
@@ -1776,8 +1778,10 @@ class AdminViewPermissionsTest(TestCase):
         self.client.force_login(self.changeuser)
         response = self.client.get(article_changelist_url)
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['title'], 'Select article to change')
         response = self.client.get(article_change_url)
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['title'], 'Change article')
         post = self.client.post(article_change_url, change_dict)
         self.assertRedirects(post, article_changelist_url)
         self.assertEqual(Article.objects.get(pk=self.a1.pk).content, '<p>edited article</p>')
@@ -1809,44 +1813,57 @@ class AdminViewPermissionsTest(TestCase):
         change_url_6 = reverse('admin:admin_views_rowlevelchangepermissionmodel_change', args=(r6.pk,))
         logins = [self.superuser, self.viewuser, self.adduser, self.changeuser, self.deleteuser]
         for login_user in logins:
-            self.client.force_login(login_user)
-            response = self.client.get(change_url_1)
-            self.assertEqual(response.status_code, 403)
-            response = self.client.post(change_url_1, {'name': 'changed'})
-            self.assertEqual(RowLevelChangePermissionModel.objects.get(id=1).name, 'odd id')
-            self.assertEqual(response.status_code, 403)
-            response = self.client.get(change_url_2)
-            self.assertEqual(response.status_code, 200)
-            response = self.client.post(change_url_2, {'name': 'changed'})
-            self.assertEqual(RowLevelChangePermissionModel.objects.get(id=2).name, 'changed')
-            self.assertRedirects(response, self.index_url)
-            response = self.client.get(change_url_3)
-            self.assertEqual(response.status_code, 200)
-            response = self.client.post(change_url_3, {'name': 'changed'})
-            self.assertEqual(response.status_code, 302)
-            self.assertRedirects(response, self.index_url)
-            self.assertEqual(RowLevelChangePermissionModel.objects.get(id=3).name, 'odd id mult 3')
-            response = self.client.get(change_url_6)
-            self.assertEqual(response.status_code, 200)
-            response = self.client.post(change_url_6, {'name': 'changed'})
-            self.assertEqual(RowLevelChangePermissionModel.objects.get(id=6).name, 'changed')
-            self.assertRedirects(response, self.index_url)
+            with self.subTest(login_user.username):
+                self.client.force_login(login_user)
+                response = self.client.get(change_url_1)
+                self.assertEqual(response.status_code, 403)
+                response = self.client.post(change_url_1, {'name': 'changed'})
+                self.assertEqual(RowLevelChangePermissionModel.objects.get(id=1).name, 'odd id')
+                self.assertEqual(response.status_code, 403)
+                response = self.client.get(change_url_2)
+                self.assertEqual(response.status_code, 200)
+                response = self.client.post(change_url_2, {'name': 'changed'})
+                self.assertEqual(RowLevelChangePermissionModel.objects.get(id=2).name, 'changed')
+                self.assertRedirects(response, self.index_url)
+                response = self.client.get(change_url_3)
+                self.assertEqual(response.status_code, 200)
+                response = self.client.post(change_url_3, {'name': 'changed'})
+                self.assertRedirects(response, self.index_url)
+                self.assertEqual(RowLevelChangePermissionModel.objects.get(id=3).name, 'odd id mult 3')
+                response = self.client.get(change_url_6)
+                self.assertEqual(response.status_code, 200)
+                response = self.client.post(change_url_6, {'name': 'changed'})
+                self.assertEqual(RowLevelChangePermissionModel.objects.get(id=6).name, 'changed')
+                self.assertRedirects(response, self.index_url)
 
-            self.client.get(reverse('admin:logout'))
+                self.client.get(reverse('admin:logout'))
 
         for login_user in [self.joepublicuser, self.nostaffuser]:
-            self.client.force_login(login_user)
-            response = self.client.get(change_url_1, follow=True)
-            self.assertContains(response, 'login-form')
-            response = self.client.post(change_url_1, {'name': 'changed'}, follow=True)
-            self.assertEqual(RowLevelChangePermissionModel.objects.get(id=1).name, 'odd id')
-            self.assertContains(response, 'login-form')
-            response = self.client.get(change_url_2, follow=True)
-            self.assertContains(response, 'login-form')
-            response = self.client.post(change_url_2, {'name': 'changed again'}, follow=True)
-            self.assertEqual(RowLevelChangePermissionModel.objects.get(id=2).name, 'changed')
-            self.assertContains(response, 'login-form')
-            self.client.get(reverse('admin:logout'))
+            with self.subTest(login_user.username):
+                self.client.force_login(login_user)
+                response = self.client.get(change_url_1, follow=True)
+                self.assertContains(response, 'login-form')
+                response = self.client.post(change_url_1, {'name': 'changed'}, follow=True)
+                self.assertEqual(RowLevelChangePermissionModel.objects.get(id=1).name, 'odd id')
+                self.assertContains(response, 'login-form')
+                response = self.client.get(change_url_2, follow=True)
+                self.assertContains(response, 'login-form')
+                response = self.client.post(change_url_2, {'name': 'changed again'}, follow=True)
+                self.assertEqual(RowLevelChangePermissionModel.objects.get(id=2).name, 'changed')
+                self.assertContains(response, 'login-form')
+                self.client.get(reverse('admin:logout'))
+
+    def test_change_view_without_object_change_permission(self):
+        """
+        The object should be read-only if the user has permission to view it
+        and change objects of that type but not to change the current object.
+        """
+        change_url = reverse('admin9:admin_views_article_change', args=(self.a1.pk,))
+        self.client.force_login(self.viewuser)
+        response = self.client.get(change_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['title'], 'View article')
+        self.assertContains(response, '<a href="/test_admin/admin9/admin_views/article/" class="closelink">Close</a>')
 
     def test_change_view_save_as_new(self):
         """
@@ -1982,27 +1999,29 @@ class AdminViewPermissionsTest(TestCase):
         rl2 = RowLevelChangePermissionModel.objects.create(name="even id")
         logins = [self.superuser, self.viewuser, self.adduser, self.changeuser, self.deleteuser]
         for login_user in logins:
-            self.client.force_login(login_user)
-            url = reverse('admin:admin_views_rowlevelchangepermissionmodel_history', args=(rl1.pk,))
-            response = self.client.get(url)
-            self.assertEqual(response.status_code, 403)
+            with self.subTest(login_user.username):
+                self.client.force_login(login_user)
+                url = reverse('admin:admin_views_rowlevelchangepermissionmodel_history', args=(rl1.pk,))
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 403)
 
-            url = reverse('admin:admin_views_rowlevelchangepermissionmodel_history', args=(rl2.pk,))
-            response = self.client.get(url)
-            self.assertEqual(response.status_code, 200)
+                url = reverse('admin:admin_views_rowlevelchangepermissionmodel_history', args=(rl2.pk,))
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
 
-            self.client.get(reverse('admin:logout'))
+                self.client.get(reverse('admin:logout'))
 
         for login_user in [self.joepublicuser, self.nostaffuser]:
-            self.client.force_login(login_user)
-            url = reverse('admin:admin_views_rowlevelchangepermissionmodel_history', args=(rl1.pk,))
-            response = self.client.get(url, follow=True)
-            self.assertContains(response, 'login-form')
-            url = reverse('admin:admin_views_rowlevelchangepermissionmodel_history', args=(rl2.pk,))
-            response = self.client.get(url, follow=True)
-            self.assertContains(response, 'login-form')
+            with self.subTest(login_user.username):
+                self.client.force_login(login_user)
+                url = reverse('admin:admin_views_rowlevelchangepermissionmodel_history', args=(rl1.pk,))
+                response = self.client.get(url, follow=True)
+                self.assertContains(response, 'login-form')
+                url = reverse('admin:admin_views_rowlevelchangepermissionmodel_history', args=(rl2.pk,))
+                response = self.client.get(url, follow=True)
+                self.assertContains(response, 'login-form')
 
-            self.client.get(reverse('admin:logout'))
+                self.client.get(reverse('admin:logout'))
 
     def test_history_view_bad_url(self):
         self.client.force_login(self.changeuser)
@@ -2225,7 +2244,7 @@ class AdminViewPermissionsTest(TestCase):
     def test_post_save_message_no_forbidden_links_visible(self):
         """
         Post-save message shouldn't contain a link to the change form if the
-        user doen't have the change permission.
+        user doesn't have the change permission.
         """
         self.client.force_login(self.adduser)
         # Emulate Article creation for user with add-only permission.
@@ -3592,7 +3611,7 @@ class AdminCustomQuerysetTest(TestCase):
         # Test for #14529. only() is used in ModelAdmin.get_queryset()
 
         # model has __str__ method
-        t = Telegram.objects.create(title="Frist Telegram")
+        t = Telegram.objects.create(title="First Telegram")
         self.assertEqual(Telegram.objects.count(), 1)
         response = self.client.get(reverse('admin:admin_views_telegram_change', args=(t.pk,)))
         self.assertEqual(response.status_code, 200)
@@ -5543,7 +5562,7 @@ class AdminKeepChangeListFiltersTests(TestCase):
     def setUp(self):
         self.client.force_login(self.superuser)
 
-    def assertURLEqual(self, url1, url2):
+    def assertURLEqual(self, url1, url2, msg_prefix=''):
         """
         Assert that two URLs are equal despite the ordering
         of their querystring. Refs #22360.
@@ -5714,31 +5733,19 @@ class AdminKeepChangeListFiltersTests(TestCase):
 
         post_data['_save'] = 1
         response = self.client.post(self.get_change_url(), data=post_data)
-        self.assertEqual(response.status_code, 302)
-        self.assertURLEqual(
-            response.url,
-            self.get_changelist_url()
-        )
+        self.assertRedirects(response, self.get_changelist_url())
         post_data.pop('_save')
 
         # Test redirect on "Save and continue".
         post_data['_continue'] = 1
         response = self.client.post(self.get_change_url(), data=post_data)
-        self.assertEqual(response.status_code, 302)
-        self.assertURLEqual(
-            response.url,
-            self.get_change_url()
-        )
+        self.assertRedirects(response, self.get_change_url())
         post_data.pop('_continue')
 
         # Test redirect on "Save and add new".
         post_data['_addanother'] = 1
         response = self.client.post(self.get_change_url(), data=post_data)
-        self.assertEqual(response.status_code, 302)
-        self.assertURLEqual(
-            response.url,
-            self.get_add_url()
-        )
+        self.assertRedirects(response, self.get_add_url())
         post_data.pop('_addanother')
 
     def test_add_view(self):
@@ -5762,43 +5769,27 @@ class AdminKeepChangeListFiltersTests(TestCase):
         # Test redirect on "Save".
         post_data['_save'] = 1
         response = self.client.post(self.get_add_url(), data=post_data)
-        self.assertEqual(response.status_code, 302)
-        self.assertURLEqual(
-            response.url,
-            self.get_change_url(User.objects.get(username='dummy').pk)
-        )
+        self.assertRedirects(response, self.get_change_url(User.objects.get(username='dummy').pk))
         post_data.pop('_save')
 
         # Test redirect on "Save and continue".
         post_data['username'] = 'dummy2'
         post_data['_continue'] = 1
         response = self.client.post(self.get_add_url(), data=post_data)
-        self.assertEqual(response.status_code, 302)
-        self.assertURLEqual(
-            response.url,
-            self.get_change_url(User.objects.get(username='dummy2').pk)
-        )
+        self.assertRedirects(response, self.get_change_url(User.objects.get(username='dummy2').pk))
         post_data.pop('_continue')
 
         # Test redirect on "Save and add new".
         post_data['username'] = 'dummy3'
         post_data['_addanother'] = 1
         response = self.client.post(self.get_add_url(), data=post_data)
-        self.assertEqual(response.status_code, 302)
-        self.assertURLEqual(
-            response.url,
-            self.get_add_url()
-        )
+        self.assertRedirects(response, self.get_add_url())
         post_data.pop('_addanother')
 
     def test_delete_view(self):
         # Test redirect on "Delete".
         response = self.client.post(self.get_delete_url(), {'post': 'yes'})
-        self.assertEqual(response.status_code, 302)
-        self.assertURLEqual(
-            response.url,
-            self.get_changelist_url()
-        )
+        self.assertRedirects(response, self.get_changelist_url())
 
     def test_url_prefix(self):
         context = {

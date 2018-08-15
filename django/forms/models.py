@@ -696,8 +696,12 @@ class BaseModelFormSet(BaseFormSet):
                     for field in unique_check if field in form.cleaned_data
                 )
                 # Reduce Model instances to their primary key values
-                row_data = tuple(d._get_pk_val() if hasattr(d, '_get_pk_val') else d
-                                 for d in row_data)
+                row_data = tuple(
+                    d._get_pk_val() if hasattr(d, '_get_pk_val')
+                    # Prevent "unhashable type: list" errors later on.
+                    else tuple(d) if isinstance(d, list)
+                    else d for d in row_data
+                )
                 if row_data and None not in row_data:
                     # if we've already seen it then we have a uniqueness failure
                     if row_data in seen_data:
@@ -940,17 +944,7 @@ class BaseInlineFormSet(BaseModelFormSet):
         # form (it may have been saved after the formset was originally
         # instantiated).
         setattr(form.instance, self.fk.name, self.instance)
-        # Use commit=False so we can assign the parent key afterwards, then
-        # save the object.
-        obj = form.save(commit=False)
-        pk_value = getattr(self.instance, self.fk.remote_field.field_name)
-        setattr(obj, self.fk.get_attname(), getattr(pk_value, 'pk', pk_value))
-        if commit:
-            obj.save()
-        # form.save_m2m() can be called via the formset later on if commit=False
-        if commit and hasattr(form, 'save_m2m'):
-            form.save_m2m()
-        return obj
+        return super().save_new(form, commit=commit)
 
     def add_fields(self, form, index):
         super().add_fields(form, index)

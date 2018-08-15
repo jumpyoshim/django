@@ -7,7 +7,9 @@ from admin_scripts.tests import AdminScriptTestCase
 from django.apps import apps
 from django.core import management
 from django.core.management import BaseCommand, CommandError, find_commands
-from django.core.management.utils import find_command, popen_wrapper
+from django.core.management.utils import (
+    find_command, get_random_secret_key, popen_wrapper,
+)
 from django.db import connection
 from django.test import SimpleTestCase, override_settings
 from django.test.utils import captured_stderr, extend_sys_path
@@ -205,6 +207,11 @@ class CommandTests(SimpleTestCase):
         self.assertIn('need_me', out.getvalue())
         self.assertIn('needme2', out.getvalue())
 
+    def test_command_add_arguments_after_common_arguments(self):
+        out = StringIO()
+        management.call_command('common_args', stdout=out)
+        self.assertIn('Detected that --version already exists', out.getvalue())
+
     def test_subparser(self):
         out = StringIO()
         management.call_command('subparser', 'foo', 12, stdout=out)
@@ -214,6 +221,12 @@ class CommandTests(SimpleTestCase):
         msg = "Error: invalid choice: 'test' (choose from 'foo')"
         with self.assertRaisesMessage(CommandError, msg):
             management.call_command('subparser', 'test', 12)
+
+    def test_create_parser_kwargs(self):
+        """BaseCommand.create_parser() passes kwargs to CommandParser."""
+        epilog = 'some epilog text'
+        parser = BaseCommand().create_parser('prog_name', 'subcommand', epilog=epilog)
+        self.assertEqual(parser.epilog, epilog)
 
 
 class CommandRunTests(AdminScriptTestCase):
@@ -249,3 +262,9 @@ class UtilsTests(SimpleTestCase):
         msg = 'Error executing a_42_command_that_doesnt_exist_42'
         with self.assertRaisesMessage(CommandError, msg):
             popen_wrapper(['a_42_command_that_doesnt_exist_42'])
+
+    def test_get_random_secret_key(self):
+        key = get_random_secret_key()
+        self.assertEqual(len(key), 50)
+        for char in key:
+            self.assertIn(char, 'abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)')

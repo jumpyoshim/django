@@ -29,6 +29,8 @@ MOCK_INPUT_KEY_TO_PROMPTS = {
     # @mock_inputs dict key: [expected prompt messages],
     'bypass': ['Bypass password validation and create user anyway? [y/N]: '],
     'email': ['Email address: '],
+    'date_of_birth': ['Date of birth: '],
+    'first_name': ['First name: '],
     'username': ['Username: ', lambda: "Username (leave blank to use '%s'): " % get_default_username()],
 }
 
@@ -51,6 +53,8 @@ def mock_inputs(inputs):
                 assert '__proxy__' not in prompt
                 response = None
                 for key, val in inputs.items():
+                    if val == 'KeyboardInterrupt':
+                        raise KeyboardInterrupt
                     # get() fallback because sometimes 'key' is the actual
                     # prompt rather than a shortcut name.
                     prompt_msgs = MOCK_INPUT_KEY_TO_PROMPTS.get(key, key)
@@ -325,6 +329,7 @@ class CreatesuperuserManagementCommandTestCase(TestCase):
             interactive=False,
             email="joe@somewhere.org",
             date_of_birth="1976-04-01",
+            first_name='Joe',
             stdout=new_io,
         )
         command_output = new_io.getvalue().strip()
@@ -550,6 +555,85 @@ class CreatesuperuserManagementCommandTestCase(TestCase):
 
         test(self)
 
+    @override_settings(AUTH_PASSWORD_VALIDATORS=[
+        {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    ])
+    def test_validate_password_against_username(self):
+        new_io = StringIO()
+        username = 'supremelycomplex'
+
+        def bad_then_good_password(index=[0]):
+            """Return username the first two times, then a valid password."""
+            index[0] += 1
+            if index[0] <= 2:
+                return username
+            return 'superduperunguessablepassword'
+
+        @mock_inputs({
+            'password': bad_then_good_password,
+            'username': username,
+            'email': '',
+            'bypass': 'n',
+        })
+        def test(self):
+            call_command(
+                'createsuperuser',
+                interactive=True,
+                stdin=MockTTY(),
+                stdout=new_io,
+                stderr=new_io,
+            )
+            self.assertEqual(
+                new_io.getvalue().strip(),
+                'The password is too similar to the username.\n'
+                'Superuser created successfully.'
+            )
+
+        test(self)
+
+    @override_settings(
+        AUTH_USER_MODEL='auth_tests.CustomUser',
+        AUTH_PASSWORD_VALIDATORS=[
+            {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+        ]
+    )
+    def test_validate_password_against_required_fields(self):
+        new_io = StringIO()
+        username = 'josephine'
+
+        # Returns the username the first two times it's called, then a valid
+        # password.
+        def bad_then_good_password(index=[0]):
+            """Return username the first two times, then a valid password."""
+            index[0] += 1
+            if index[0] <= 2:
+                return username
+            return 'superduperunguessablepassword'
+
+        @mock_inputs({
+            'password': bad_then_good_password,
+            'username': username,
+            'first_name': 'josephine',
+            'date_of_birth': '1970-01-01',
+            'email': 'joey@example.com',
+            'bypass': 'n',
+        })
+        def test(self):
+            call_command(
+                'createsuperuser',
+                interactive=True,
+                stdin=MockTTY(),
+                stdout=new_io,
+                stderr=new_io,
+            )
+            self.assertEqual(
+                new_io.getvalue().strip(),
+                "The password is too similar to the first name.\n"
+                "Superuser created successfully."
+            )
+
+        test(self)
+
     def test_blank_username(self):
         """Creation fails if --username is blank."""
         new_io = StringIO()
@@ -559,6 +643,22 @@ class CreatesuperuserManagementCommandTestCase(TestCase):
                 call_command(
                     'createsuperuser',
                     username='',
+                    stdin=MockTTY(),
+                    stdout=new_io,
+                    stderr=new_io,
+                )
+
+        test(self)
+
+    def test_blank_username_non_interactive(self):
+        new_io = StringIO()
+
+        def test(self):
+            with self.assertRaisesMessage(CommandError, 'Username cannot be blank.'):
+                call_command(
+                    'createsuperuser',
+                    username='',
+                    interactive=False,
                     stdin=MockTTY(),
                     stdout=new_io,
                     stderr=new_io,
@@ -626,6 +726,19 @@ class CreatesuperuserManagementCommandTestCase(TestCase):
 
         test(self)
 
+    @mock_inputs({'username': 'KeyboardInterrupt'})
+    def test_keyboard_interrupt(self):
+        new_io = StringIO()
+        with self.assertRaises(SystemExit):
+            call_command(
+                'createsuperuser',
+                interactive=True,
+                stdin=MockTTY(),
+                stdout=new_io,
+                stderr=new_io,
+            )
+        self.assertEqual(new_io.getvalue(), '\nOperation cancelled.\n')
+
     def test_existing_username(self):
         """Creation fails if the username already exists."""
         user = User.objects.create(username='janet')
@@ -654,6 +767,47 @@ class CreatesuperuserManagementCommandTestCase(TestCase):
                 'Error: That username is already taken.\n'
                 'Superuser created successfully.'
             )
+
+        test(self)
+
+    def test_existing_username_non_interactive(self):
+        """Creation fails if the username already exists."""
+        User.objects.create(username='janet')
+        new_io = StringIO()
+        with self.assertRaisesMessage(CommandError, "Error: That username is already taken."):
+            call_command(
+                'createsuperuser',
+                username='janet',
+                email='',
+                interactive=False,
+                stdout=new_io,
+            )
+
+    def test_existing_username_provided_via_option_and_interactive(self):
+        """call_command() gets username='janet' and interactive=True."""
+        new_io = StringIO()
+        entered_passwords = ['password', 'password']
+        User.objects.create(username='janet')
+
+        def return_passwords():
+            return entered_passwords.pop(0)
+
+        @mock_inputs({
+            'password': return_passwords,
+            'username': 'janet1',
+            'email': 'test@test.com'
+        })
+        def test(self):
+            call_command(
+                'createsuperuser',
+                username='janet',
+                interactive=True,
+                stdin=MockTTY(),
+                stdout=new_io,
+                stderr=new_io,
+            )
+            msg = 'Error: That username is already taken.\nSuperuser created successfully.'
+            self.assertEqual(new_io.getvalue().strip(), msg)
 
         test(self)
 
@@ -722,6 +876,40 @@ class CreatesuperuserManagementCommandTestCase(TestCase):
                 "Error: Blank passwords aren't allowed.\n"
                 "Superuser created successfully."
             )
+
+        test(self)
+
+    @override_settings(AUTH_USER_MODEL='auth_tests.NoPasswordUser')
+    def test_usermodel_without_password(self):
+        new_io = StringIO()
+
+        def test(self):
+            call_command(
+                'createsuperuser',
+                interactive=False,
+                stdin=MockTTY(),
+                stdout=new_io,
+                stderr=new_io,
+                username='username',
+            )
+            self.assertEqual(new_io.getvalue().strip(), 'Superuser created successfully.')
+
+        test(self)
+
+    @override_settings(AUTH_USER_MODEL='auth_tests.NoPasswordUser')
+    def test_usermodel_without_password_interactive(self):
+        new_io = StringIO()
+
+        @mock_inputs({'username': 'username'})
+        def test(self):
+            call_command(
+                'createsuperuser',
+                interactive=True,
+                stdin=MockTTY(),
+                stdout=new_io,
+                stderr=new_io,
+            )
+            self.assertEqual(new_io.getvalue().strip(), 'Superuser created successfully.')
 
         test(self)
 
@@ -794,3 +982,15 @@ class CreatePermissionsTests(TestCase):
         state = migrations.state.ProjectState(real_apps=['contenttypes'])
         with self.assertNumQueries(0):
             create_permissions(self.app_config, verbosity=0, apps=state.apps)
+
+    def test_create_permissions_checks_contenttypes_created(self):
+        """
+        `post_migrate` handler ordering isn't guaranteed. Simulate a case
+        where create_permissions() is called before create_contenttypes().
+        """
+        # Warm the manager cache.
+        ContentType.objects.get_for_model(Group)
+        # Apply a deletion as if e.g. a database 'flush' had been executed.
+        ContentType.objects.filter(app_label='auth', model='group').delete()
+        # This fails with a foreign key constraint without the fix.
+        create_permissions(apps.get_app_config('auth'), interactive=False, verbosity=0)

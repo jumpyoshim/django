@@ -29,16 +29,6 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
 
     ignored_tables = []
 
-    _get_indexes_query = """
-        SELECT attr.attname, idx.indkey, idx.indisunique, idx.indisprimary
-        FROM pg_catalog.pg_class c, pg_catalog.pg_class c2,
-            pg_catalog.pg_index idx, pg_catalog.pg_attribute attr
-        WHERE c.oid = idx.indrelid
-            AND idx.indexrelid = c2.oid
-            AND attr.attrelid = c.oid
-            AND attr.attnum = idx.indkey[0]
-            AND c.relname = %s"""
-
     def get_field_type(self, data_type, description):
         field_type = super().get_field_type(data_type, description)
         if description.default and 'nextval' in description.default:
@@ -210,6 +200,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """, [table_name])
         for index, columns, unique, primary, orders, type_, definition, options in cursor.fetchall():
             if index not in constraints:
+                basic_index = type_ == 'btree' and not index.endswith('_btree') and options is None
                 constraints[index] = {
                     "columns": columns if columns != [None] else [],
                     "orders": orders if orders != [None] else [],
@@ -218,7 +209,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     "foreign_key": None,
                     "check": False,
                     "index": True,
-                    "type": Index.suffix if type_ == 'btree' else type_,
+                    "type": Index.suffix if basic_index else type_,
                     "definition": definition,
                     "options": options,
                 }

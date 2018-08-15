@@ -17,7 +17,7 @@ from django.core.checks.urls import check_resolver
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.datastructures import MultiValueDict
 from django.utils.functional import cached_property
-from django.utils.http import RFC3986_SUBDELIMS
+from django.utils.http import RFC3986_SUBDELIMS, escape_leading_slashes
 from django.utils.regex_helper import normalize
 from django.utils.translation import get_language
 
@@ -68,11 +68,13 @@ def get_resolver(urlconf=None):
 
 
 @functools.lru_cache(maxsize=None)
-def get_ns_resolver(ns_pattern, resolver):
+def get_ns_resolver(ns_pattern, resolver, converters):
     # Build a namespaced resolver for the given parent URLconf pattern.
     # This makes it possible to have captured parameters in the parent
     # URLconf pattern.
-    ns_resolver = URLResolver(RegexPattern(ns_pattern), resolver.url_patterns)
+    pattern = RegexPattern(ns_pattern)
+    pattern.converters = dict(converters)
+    ns_resolver = URLResolver(pattern, resolver.url_patterns)
     return URLResolver(RegexPattern(r'^/'), [ns_resolver])
 
 
@@ -439,7 +441,7 @@ class URLResolver:
                                         new_matches,
                                         p_pattern + pat,
                                         {**defaults, **url_pattern.default_kwargs},
-                                        {**self.pattern.converters, **converters}
+                                        {**self.pattern.converters, **url_pattern.pattern.converters, **converters}
                                     )
                                 )
                         for namespace, (prefix, sub_pattern) in url_pattern.namespace_dict.items():
@@ -590,9 +592,7 @@ class URLResolver:
                     # safe characters from `pchar` definition of RFC 3986
                     url = quote(candidate_pat % text_candidate_subs, safe=RFC3986_SUBDELIMS + '/~:@')
                     # Don't allow construction of scheme relative urls.
-                    if url.startswith('//'):
-                        url = '/%%2F%s' % url[2:]
-                    return url
+                    return escape_leading_slashes(url)
         # lookup_view can be URL name or callable, but callables are not
         # friendly in error messages.
         m = getattr(lookup_view, '__module__', None)

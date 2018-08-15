@@ -57,7 +57,6 @@ class HttpRequest:
         self.path_info = ''
         self.method = None
         self.resolver_match = None
-        self._post_parse_error = False
         self.content_type = None
         self.content_params = None
 
@@ -165,7 +164,7 @@ class HttpRequest:
     def build_absolute_uri(self, location=None):
         """
         Build an absolute URI from the location and the variables available in
-        this request. If no ``location`` is specified, bulid the absolute URI
+        this request. If no ``location`` is specified, build the absolute URI
         using request.get_full_path(). If the location is absolute, convert it
         to an RFC 3987 compliant URI and return it. If location is relative or
         is scheme-relative (i.e., ``//example.com/``), urljoin() it to a base
@@ -289,7 +288,6 @@ class HttpRequest:
     def _mark_post_parse_error(self):
         self._post = QueryDict()
         self._files = MultiValueDict()
-        self._post_parse_error = True
 
     def _load_post_and_files(self):
         """Populate self._post and self._files if the content-type is a form type"""
@@ -313,9 +311,6 @@ class HttpRequest:
                 # formatting the error the request handler might access
                 # self.POST, set self._post and self._file to prevent
                 # attempts to parse POST data again.
-                # Mark that an error occurred. This allows self.__repr__ to
-                # be explicit about it instead of simply representing an
-                # empty POST
                 self._mark_post_parse_error()
                 raise
         elif self.content_type == 'application/x-www-form-urlencoded':
@@ -351,11 +346,7 @@ class HttpRequest:
             raise UnreadablePostError(*e.args) from e
 
     def __iter__(self):
-        while True:
-            buf = self.readline()
-            if not buf:
-                break
-            yield buf
+        return iter(self.readline, b'')
 
     def xreadlines(self):
         warnings.warn(
@@ -520,7 +511,7 @@ class QueryDict(MultiValueDict):
                 return urlencode({k: v})
         for k, list_ in self.lists():
             output.extend(
-                encode(k.encode(self.encoding), v.encode(self.encoding))
+                encode(k.encode(self.encoding), str(v).encode(self.encoding))
                 for v in list_
             )
         return '&'.join(output)

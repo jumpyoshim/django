@@ -244,10 +244,10 @@ class Field(RegisterLookupMixin):
         if not self.choices:
             return []
 
-        def is_value(value):
-            return isinstance(value, (str, Promise)) or not is_iterable(value)
+        def is_value(value, accept_promise=True):
+            return isinstance(value, (str, Promise) if accept_promise else str) or not is_iterable(value)
 
-        if is_value(self.choices):
+        if is_value(self.choices, accept_promise=False):
             return [
                 checks.Error(
                     "'choices' must be an iterable (e.g., a list or tuple).",
@@ -998,8 +998,7 @@ class BooleanField(Field):
         if self.null and value in self.empty_values:
             return None
         if value in (True, False):
-            # if value is 1 or 0 than it's equal to True or False, but we want
-            # to return a true bool for semantic reasons.
+            # 1/0 are equal to True/False. bool() converts former to latter.
             return bool(value)
         if value in ('t', 'True', '1'):
             return True

@@ -63,7 +63,8 @@ class BaseDatabaseSchemaEditor:
     sql_rename_column = "ALTER TABLE %(table)s RENAME COLUMN %(old_column)s TO %(new_column)s"
     sql_update_with_default = "UPDATE %(table)s SET %(column)s = %(default)s WHERE %(column)s IS NULL"
 
-    sql_create_check = "ALTER TABLE %(table)s ADD CONSTRAINT %(name)s CHECK (%(check)s)"
+    sql_check = "CONSTRAINT %(name)s CHECK (%(check)s)"
+    sql_create_check = "ALTER TABLE %(table)s ADD %(check)s"
     sql_delete_check = "ALTER TABLE %(table)s DROP CONSTRAINT %(name)s"
 
     sql_create_unique = "ALTER TABLE %(table)s ADD CONSTRAINT %(name)s UNIQUE (%(columns)s)"
@@ -299,10 +300,11 @@ class BaseDatabaseSchemaEditor:
         for fields in model._meta.unique_together:
             columns = [model._meta.get_field(field).column for field in fields]
             self.deferred_sql.append(self._create_unique_sql(model, columns))
+        constraints = [check.constraint_sql(model, self) for check in model._meta.constraints]
         # Make the table
         sql = self.sql_create_table % {
             "table": self.quote_name(model._meta.db_table),
-            "definition": ", ".join(column_sqls)
+            "definition": ", ".join((*column_sqls, *constraints)),
         }
         if model._meta.db_tablespace:
             tablespace_sql = self.connection.ops.tablespace_sql(model._meta.db_tablespace)
@@ -342,6 +344,14 @@ class BaseDatabaseSchemaEditor:
     def remove_index(self, model, index):
         """Remove an index from a model."""
         self.execute(index.remove_sql(model, self))
+
+    def add_constraint(self, model, constraint):
+        """Add a check constraint to a model."""
+        self.execute(constraint.create_sql(model, self))
+
+    def remove_constraint(self, model, constraint):
+        """Remove a check constraint from a model."""
+        self.execute(constraint.remove_sql(model, self))
 
     def alter_unique_together(self, model, old_unique_together, new_unique_together):
         """
@@ -539,7 +549,7 @@ class BaseDatabaseSchemaEditor:
                 fks_dropped.add((old_field.column,))
                 self.execute(self._delete_constraint_sql(self.sql_delete_fk, model, fk_name))
         # Has unique been removed?
-        if old_field.unique and (not new_field.unique or (not old_field.primary_key and new_field.primary_key)):
+        if old_field.unique and (not new_field.unique or self._field_became_primary_key(old_field, new_field)):
             # Find the unique constraint for this field
             constraint_names = self._constraint_names(model, [old_field.column], unique=True, primary_key=False)
             if strict and len(constraint_names) != 1:
@@ -689,9 +699,7 @@ class BaseDatabaseSchemaEditor:
         if old_field.primary_key and not new_field.primary_key:
             self._delete_primary_key(model, strict)
         # Added a unique?
-        if (not old_field.unique and new_field.unique) or (
-            old_field.primary_key and not new_field.primary_key and new_field.unique
-        ):
+        if self._unique_should_be_added(old_field, new_field):
             self.execute(self._create_unique_sql(model, [new_field.column]))
         # Added an index? Add an index if db_index switched to True or a unique
         # constraint will no longer be used in lieu of an index. The following
@@ -710,7 +718,7 @@ class BaseDatabaseSchemaEditor:
         if old_field.primary_key and new_field.primary_key and old_type != new_type:
             rels_to_update.extend(_related_non_m2m_objects(old_field, new_field))
         # Changed to become primary key?
-        if not old_field.primary_key and new_field.primary_key:
+        if self._field_became_primary_key(old_field, new_field):
             # Make the new one
             self.execute(
                 self.sql_create_pk % {
@@ -754,11 +762,12 @@ class BaseDatabaseSchemaEditor:
             self.execute(
                 self.sql_create_check % {
                     "table": self.quote_name(model._meta.db_table),
-                    "name": self.quote_name(
-                        self._create_index_name(model._meta.db_table, [new_field.column], suffix="_check")
-                    ),
-                    "column": self.quote_name(new_field.column),
-                    "check": new_db_params['check'],
+                    "check": self.sql_check % {
+                        'name': self.quote_name(
+                            self._create_index_name(model._meta.db_table, [new_field.column], suffix='_check'),
+                        ),
+                        'check': new_db_params['check'],
+                    },
                 }
             )
         # Drop the default if we need to
@@ -909,7 +918,7 @@ class BaseDatabaseSchemaEditor:
         return ''
 
     def _create_index_sql(self, model, fields, *, name=None, suffix='', using='',
-                          db_tablespace=None, col_suffixes=(), sql=None):
+                          db_tablespace=None, col_suffixes=(), sql=None, opclasses=()):
         """
         Return the SQL statement to create the index for one or several fields.
         `sql` can be specified if the syntax differs from the standard (GIS
@@ -931,9 +940,12 @@ class BaseDatabaseSchemaEditor:
             table=Table(table, self.quote_name),
             name=IndexName(table, columns, suffix, create_index_name),
             using=using,
-            columns=Columns(table, columns, self.quote_name, col_suffixes=col_suffixes),
+            columns=self._index_columns(table, columns, col_suffixes, opclasses),
             extra=tablespace_sql,
         )
+
+    def _index_columns(self, table, columns, col_suffixes, opclasses):
+        return Columns(table, columns, self.quote_name, col_suffixes=col_suffixes)
 
     def _model_indexes_sql(self, model):
         """
@@ -965,6 +977,14 @@ class BaseDatabaseSchemaEditor:
 
     def _field_should_be_indexed(self, model, field):
         return field.db_index and not field.unique
+
+    def _field_became_primary_key(self, old_field, new_field):
+        return not old_field.primary_key and new_field.primary_key
+
+    def _unique_should_be_added(self, old_field, new_field):
+        return (not old_field.unique and new_field.unique) or (
+            old_field.primary_key and not new_field.primary_key and new_field.unique
+        )
 
     def _rename_field_sql(self, table, old_field, new_field, new_type):
         return self.sql_rename_column % {
