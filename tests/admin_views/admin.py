@@ -91,6 +91,14 @@ class ChapterXtra1Admin(admin.ModelAdmin):
     )
 
 
+class ArticleForm(forms.ModelForm):
+    extra_form_field = forms.BooleanField(required=False)
+
+    class Meta:
+        fields = '__all__'
+        model = Article
+
+
 class ArticleAdmin(admin.ModelAdmin):
     list_display = (
         'content', 'date', callable_year, 'model_year', 'modeladmin_year',
@@ -101,10 +109,11 @@ class ArticleAdmin(admin.ModelAdmin):
     list_filter = ('date', 'section')
     autocomplete_fields = ('section',)
     view_on_site = False
+    form = ArticleForm
     fieldsets = (
         ('Some fields', {
             'classes': ('collapse',),
-            'fields': ('title', 'content')
+            'fields': ('title', 'content', 'extra_form_field'),
         }),
         ('Some other fields', {
             'classes': ('wide',),
@@ -1126,3 +1135,12 @@ class ArticleAdmin9(admin.ModelAdmin):
 
 site9 = admin.AdminSite(name='admin9')
 site9.register(Article, ArticleAdmin9)
+
+
+class ArticleAdmin10(admin.ModelAdmin):
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+site10 = admin.AdminSite(name='admin10')
+site10.register(Article, ArticleAdmin10)

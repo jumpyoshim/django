@@ -8,6 +8,7 @@ from django.db.backends.utils import strip_quotes, truncate_name
 from django.db.utils import DatabaseError
 from django.utils import timezone
 from django.utils.encoding import force_bytes
+from django.utils.functional import cached_property
 
 from .base import Database
 from .utils import BulkInsertMapper, InsertIdVar, Oracle_datetime
@@ -69,6 +70,8 @@ END;
             return "TO_CHAR(%s, 'IW')" % field_name
         elif lookup_type == 'quarter':
             return "TO_CHAR(%s, 'Q')" % field_name
+        elif lookup_type == 'iso_year':
+            return "TO_CHAR(%s, 'IYYY')" % field_name
         else:
             # https://docs.oracle.com/database/121/SQLRF/functions067.htm#SQLRF00639
             return "EXTRACT(%s FROM %s)" % (lookup_type.upper(), field_name)
@@ -224,7 +227,9 @@ END;
 
     def fetch_returned_insert_id(self, cursor):
         try:
-            return int(cursor._insert_id_var.getvalue())
+            value = cursor._insert_id_var.getvalue()
+            # cx_Oracle < 7 returns value, >= 7 returns list with single value.
+            return int(value[0] if isinstance(value, list) else value)
         except (IndexError, TypeError):
             # cx_Oracle < 6.3 returns None, >= 6.3 raises IndexError.
             raise DatabaseError(
@@ -567,7 +572,7 @@ END;
         if internal_type == 'DateField':
             lhs_sql, lhs_params = lhs
             rhs_sql, rhs_params = rhs
-            return "NUMTODSINTERVAL(%s - %s, 'DAY')" % (lhs_sql, rhs_sql), lhs_params + rhs_params
+            return "NUMTODSINTERVAL(TO_NUMBER(%s - %s), 'DAY')" % (lhs_sql, rhs_sql), lhs_params + rhs_params
         return super().subtract_temporals(internal_type, lhs, rhs)
 
     def bulk_batch_size(self, fields, objs):
@@ -575,3 +580,9 @@ END;
         if fields:
             return self.connection.features.max_query_params // len(fields)
         return len(objs)
+
+    @cached_property
+    def compiler_module(self):
+        if self.connection.features.has_fetch_offset_support:
+            return super().compiler_module
+        return 'django.db.backends.oracle.compiler'

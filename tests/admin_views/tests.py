@@ -68,17 +68,10 @@ class AdminFieldExtractionMixin:
         """
         Return a list of AdminFields for the AdminForm in the response.
         """
-        admin_form = response.context['adminform']
-        fieldsets = list(admin_form)
-
-        field_lines = []
-        for fieldset in fieldsets:
-            field_lines += list(fieldset)
-
         fields = []
-        for field_line in field_lines:
-            fields += list(field_line)
-
+        for fieldset in response.context['adminform']:
+            for field_line in fieldset:
+                fields.extend(field_line)
         return fields
 
     def get_admin_readonly_fields(self, response):
@@ -1768,6 +1761,7 @@ class AdminViewPermissionsTest(TestCase):
         response = self.client.get(article_change_url)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['title'], 'View article')
+        self.assertContains(response, '<label>Extra form field:</label>')
         self.assertContains(response, '<a href="/test_admin/admin/admin_views/article/" class="closelink">Close</a>')
         post = self.client.post(article_change_url, change_dict)
         self.assertEqual(post.status_code, 302)
@@ -1864,6 +1858,21 @@ class AdminViewPermissionsTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['title'], 'View article')
         self.assertContains(response, '<a href="/test_admin/admin9/admin_views/article/" class="closelink">Close</a>')
+
+    def test_change_view_post_without_object_change_permission(self):
+        """A POST redirectS to changelist without modifications."""
+        change_dict = {
+            'title': 'Ikke fordømt',
+            'content': '<p>edited article</p>',
+            'date_0': '2008-03-18', 'date_1': '10:54:39',
+            'section': self.s1.pk,
+        }
+        change_url = reverse('admin10:admin_views_article_change', args=(self.a1.pk,))
+        changelist_url = reverse('admin10:admin_views_article_changelist')
+        self.client.force_login(self.viewuser)
+        response = self.client.post(change_url, change_dict)
+        self.assertRedirects(response, changelist_url)
+        self.assertEqual(Article.objects.get(pk=self.a1.pk).content, '<p>Middle content</p>')
 
     def test_change_view_save_as_new(self):
         """

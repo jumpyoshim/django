@@ -16,7 +16,10 @@ from django.utils.functional import LazyObject, cached_property
 from django.utils.module_loading import import_string
 from django.utils.text import get_valid_filename
 
-__all__ = ('Storage', 'FileSystemStorage', 'DefaultStorage', 'default_storage')
+__all__ = (
+    'Storage', 'FileSystemStorage', 'DefaultStorage', 'default_storage',
+    'get_storage_class',
+)
 
 
 class Storage:
@@ -35,7 +38,7 @@ class Storage:
     def save(self, name, content, max_length=None):
         """
         Save new content to the file specified by name. The content should be
-        a proper File object or any python file-like object, ready to be read
+        a proper File object or any Python file-like object, ready to be read
         from the beginning.
         """
         # Get the proper name for the file, as it will actually be saved.
@@ -309,11 +312,11 @@ class FileSystemStorage(Storage):
     def listdir(self, path):
         path = self.path(path)
         directories, files = [], []
-        for entry in os.listdir(path):
-            if os.path.isdir(os.path.join(path, entry)):
-                directories.append(entry)
+        for entry in os.scandir(path):
+            if entry.is_dir():
+                directories.append(entry.name)
             else:
-                files.append(entry)
+                files.append(entry.name)
         return directories, files
 
     def path(self, name):

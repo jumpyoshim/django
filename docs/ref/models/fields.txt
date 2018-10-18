@@ -414,11 +414,10 @@ guaranteed to fit numbers from ``-9223372036854775808`` to
 ``BinaryField``
 ---------------
 
-.. class:: BinaryField(**options)
+.. class:: BinaryField(max_length=None, **options)
 
-A field to store raw binary data. It only supports ``bytes`` assignment. Be
-aware that this field has limited functionality. For example, it is not possible
-to filter a queryset on a ``BinaryField`` value.
+A field to store raw binary data. It can be assigned :class:`bytes`,
+:class:`bytearray`, or :class:`memoryview`.
 
 By default, ``BinaryField`` sets :attr:`~Field.editable` to ``False``, in which
 case it can't be included in a :class:`~django.forms.ModelForm`.
@@ -426,6 +425,14 @@ case it can't be included in a :class:`~django.forms.ModelForm`.
 .. versionchanged:: 2.1
 
     Older versions don't allow setting ``editable`` to ``True``.
+
+``BinaryField`` has one extra optional argument:
+
+.. attribute:: BinaryField.max_length
+
+    The maximum length (in characters) of the field. The maximum length is
+    enforced in Django's validation using
+    :class:`~django.core.validators.MaxLengthValidator`.
 
 .. admonition:: Abusing ``BinaryField``
 
@@ -468,7 +475,8 @@ The default form widget for this field is a :class:`~django.forms.TextInput`.
 .. attribute:: CharField.max_length
 
     The maximum length (in characters) of the field. The max_length is enforced
-    at the database level and in Django's validation.
+    at the database level and in Django's validation using
+    :class:`~django.core.validators.MaxLengthValidator`.
 
 .. note::
 
@@ -551,7 +559,10 @@ The default form widget for this field is a single
 .. class:: DecimalField(max_digits=None, decimal_places=None, **options)
 
 A fixed-precision decimal number, represented in Python by a
-:class:`~decimal.Decimal` instance. Has two **required** arguments:
+:class:`~decimal.Decimal` instance. It validates the input using
+:class:`~django.core.validators.DecimalValidator`.
+
+Has two **required** arguments:
 
 .. attribute:: DecimalField.max_digits
 
@@ -603,8 +614,8 @@ SECOND(6)``. Otherwise a ``bigint`` of microseconds is used.
 
 .. class:: EmailField(max_length=254, **options)
 
-A :class:`CharField` that checks that the value is a valid email address. It
-uses :class:`~django.core.validators.EmailValidator` to validate the input.
+A :class:`CharField` that checks that the value is a valid email address using
+:class:`~django.core.validators.EmailValidator`.
 
 ``FileField``
 -------------
@@ -614,7 +625,7 @@ uses :class:`~django.core.validators.EmailValidator` to validate the input.
 A file-upload field.
 
 .. note::
-    The ``primary_key`` argument isn't supported and will raise a an error if
+    The ``primary_key`` argument isn't supported and will raise an error if
     used.
 
 Has two optional arguments:
@@ -969,9 +980,15 @@ The default form widget for this field is a
 .. class:: IntegerField(**options)
 
 An integer. Values from ``-2147483648`` to ``2147483647`` are safe in all
-databases supported by Django. The default form widget for this field is a
-:class:`~django.forms.NumberInput` when :attr:`~django.forms.Field.localize`
-is ``False`` or :class:`~django.forms.TextInput` otherwise.
+databases supported by Django.
+
+It uses :class:`~django.core.validators.MinValueValidator` and
+:class:`~django.core.validators.MaxValueValidator` to validate the input based
+on the values that the default database supports.
+
+The default form widget for this field is a :class:`~django.forms.NumberInput`
+when :attr:`~django.forms.Field.localize` is ``False`` or
+:class:`~django.forms.TextInput` otherwise.
 
 ``GenericIPAddressField``
 -------------------------
@@ -1050,6 +1067,9 @@ It is often useful to automatically prepopulate a SlugField based on the value
 of some other value.  You can do this automatically in the admin using
 :attr:`~django.contrib.admin.ModelAdmin.prepopulated_fields`.
 
+It uses :class:`~django.core.validators.validate_slug` or
+:class:`~django.core.validators.validate_unicode_slug` for validation.
+
 .. attribute:: SlugField.allow_unicode
 
     If ``True``, the field accepts Unicode letters in addition to ASCII
@@ -1093,7 +1113,8 @@ The admin adds some JavaScript shortcuts.
 
 .. class:: URLField(max_length=200, **options)
 
-A :class:`CharField` for a URL.
+A :class:`CharField` for a URL, validated by
+:class:`~django.core.validators.URLValidator`.
 
 The default form widget for this field is a :class:`~django.forms.TextInput`.
 
@@ -1172,8 +1193,8 @@ Relationships defined this way on :ref:`abstract models
 <abstract-base-classes>` are resolved when the model is subclassed as a
 concrete model and are not relative to the abstract model's ``app_label``:
 
-.. snippet::
-    :filename: products/models.py
+.. code-block:: python
+    :caption: products/models.py
 
     from django.db import models
 
@@ -1183,8 +1204,8 @@ concrete model and are not relative to the abstract model's ``app_label``:
         class Meta:
             abstract = True
 
-.. snippet::
-    :filename: production/models.py
+.. code-block:: python
+    :caption: production/models.py
 
     from django.db import models
     from products.models import AbstractCar
@@ -1249,6 +1270,9 @@ relation works.
             blank=True,
             null=True,
         )
+
+    ``on_delete`` doesn't create a SQL constraint in the database. Support for
+    database-level cascade options :ticket:`may be implemented later <21961>`.
 
 The possible values for :attr:`~ForeignKey.on_delete` are found in
 :mod:`django.db.models`:
@@ -1656,9 +1680,9 @@ related. This works exactly the same as it does for :class:`ForeignKey`,
 including all the options regarding :ref:`recursive <recursive-relationships>`
 and :ref:`lazy <lazy-relationships>` relationships.
 
-If you do not specify the :attr:`~ForeignKey.related_name` argument for
-the ``OneToOneField``, Django will use the lower-case name of the current model
-as default value.
+If you do not specify the :attr:`~ForeignKey.related_name` argument for the
+``OneToOneField``, Django will use the lowercase name of the current model as
+default value.
 
 With the following example::
 
